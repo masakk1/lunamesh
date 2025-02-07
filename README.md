@@ -1,18 +1,22 @@
 <h1 align="center">LunaMesh</h1>
-<p align="center">A basic starting point for networking</p>
+<p align="center">A basic starting point for networking in Lua</p>
 
 ## Description
 LuaMesh is a simple networking library for lua / love2d. Aiming to simplify networking in projects.
 
-It strives to be **simple**.
+> [!NOTE] Note:
+> This is a WIP for the moment. Feel free to try it out, any input from anyone is welcome!
 
-Implement intricate networking protocols with ease.
-
-> :note: Note: This is a WIP for the moment. So while it isn't production ready, any input from anyone is welcome!
-
+#### Features
+1. Easily set a server and client
+2. Handle connections between server and client
+3. Create custom packets and handlers for them
 
 ## Installation
-
+Copy `lunamesh.lua` to your project. Or run:
+```bash
+wget https://raw.githubusercontent.com/masakk1/lunamesh/refs/heads/main/lunamesh.lua
+```
 
 ## Example
 Here's a working example of how you can use this library:
@@ -100,13 +104,14 @@ LunaMesh is a client by default, set it a server with `:setServer(ip | nil, port
 ```lua
 lunamesh:setServer("127.0.0.1", 18080)
 ```
-> Some OSs do not allow ports below 1024. Use a high port number
+
+> [!WARNING] 
+> Some OSs don't allow ports below 1024. Use a high port number
 
 The IP can be `nil` if you want to accept connections from anywhere, if you only want to accept from yoursel, then you set it to `"127.0.0.1"`.
 
 ### Creating a client
 We only need to call `:connect(ip, port)` to connect to a desired server. You can call the connect whenever you want
-
 ```lua
 lunamesh:connect("127.0.0.1", 18080)
 ```

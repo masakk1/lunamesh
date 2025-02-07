@@ -99,7 +99,7 @@ Before we create either a server, or a client, we need to know that **LunaMesh**
 local lunamesh = require("LunaMesh") --will always return te same instance everywhere
 ```
 
-### Creating a server
+## `:setServer(ip?, port)`
 LunaMesh is a client by default, set it a server with `:setServer(ip | nil, port)`
 ```lua
 lunamesh:setServer("127.0.0.1", 18080)
@@ -110,15 +110,14 @@ lunamesh:setServer("127.0.0.1", 18080)
 
 The IP can be `nil` if you want to accept connections from anywhere, if you only want to accept from yoursel, then you set it to `"127.0.0.1"`.
 
-### Creating a client
-We only need to call `:connect(ip, port)` to connect to a desired server. You can call the connect whenever you want
+## `:connect(ip, port)` 
+Connects to a specified server at an ip and port
 ```lua
 lunamesh:connect("127.0.0.1", 18080)
 ```
 
-LunaMesh also needs to *receive* packets, so we'll need to call `:listen()` as well.
+LunaMesh also needs to *receive* packets, so `:listen()` repeatedly as well.
 
-We can loop and call `:listen()` until we are connected, which can be checked with `:isConnected()`.
 ```lua
 lunamesh:connect("127.0.0.1", 18080)
 
@@ -126,6 +125,32 @@ repeat
     lunamesh:listen()
     love.timer.sleep(0.1) --use any function to wait. eg: socket.sleep
 until lunamesh:isConnected()
+```
+
+## `addPktHandler(pkt_type, callback?)`
+Implement your own handlers for the packets you need.
+Create a packet type:
+```lua
+local PKT_TYPE = {
+    UPDATE = {
+        WORLD = 601, -- Use numbers above 500!
+        INPUT = 602
+    }
+}
+```
+Then implement the handler:
+```lua
+-- A client example
+luamesh:addPktHandler(PKT_TYPE.UPDATE.WORLD, function(self, pkt)
+    local data = pkt.data
+    -- Do your thing
+end)
+
+-- A server example
+luamesh:addPktHandler(PKT_TYPE.UPDATE.INPUT, function(self, pkt, ip, port)
+    local data = pkt.data
+    -- Do your thing
+end)
 ```
 
 ## Modifying

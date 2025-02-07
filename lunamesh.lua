@@ -56,7 +56,7 @@ function LunaMesh.new()
 	return self
 end
 
----@param ip ip | nil
+---@param ip ip?
 ---@param port port
 function LunaMesh:setServer(ip, port)
 	assert(port, "Port is required")

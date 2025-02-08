@@ -24,6 +24,9 @@ wget https://raw.githubusercontent.com/masakk1/lunamesh/refs/heads/main/lunamesh
 ## Example
 Here's a working example of how you can use this library:
 
+> [!NOTE]
+> Please take a look at [the demo](https://github.com/masakk1/lunamesh/tree/demo), since it has a more realistic example.
+
 ```lua
 ----------------------------------------
 --main.lua 

@@ -178,6 +178,20 @@ function LunaMesh:isConnected()
 	return self.state == "connected"
 end
 
+---@param timeout number
+---@return boolean
+function LunaMesh:waitUntilClientConnected(timeout)
+	local accumulator = 0
+
+	repeat
+		self:listen()
+		socket.sleep(0.1)
+		accumulator = accumulator + 0.1
+	until self:isConnected() or accumulator >= timeout
+
+	return self:isConnected()
+end
+
 --#endregion
 
 --#region Connection protocol

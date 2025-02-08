@@ -8,3 +8,4 @@ Feature requests
 - [ ] Write a full documentation
 - [ ] Easier firewall rules
 - [ ] Add a challenge / proper secure authentication (somewhat) - Maybe use signatures? salt?
+- [ ] Attach custom properties to clients. Such as a player.

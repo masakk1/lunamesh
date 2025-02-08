@@ -25,69 +25,58 @@ Here's a working example of how you can use this library:
 ----------------------------------------
 --main.lua 
 ----------------------------------------
-local lm = require("LunaMesh")
+local lunamesh = require("lunamesh")
 local PKT_TYPE = require("net_handlers")
 
 function love.load(args)
-    if args[1] == "--server" then
-        _G.IS_SERVER = true
-    end
+	if args[1] == "--server" then
+		_G.IS_SERVER = true
+		lunamesh:setServer("127.0.0.1", 8080) -- ip can be nil
+		return
+	end
 
-    if IS_SERVER then
-        lm:setServer("127.0.0.1", 8080) -- ip can be nil
-        print("Server is running")
-        -- run server code
-        -- ie: require("server")
-        return
-    end
+	lunamesh:connect("127.0.0.1", 8089)
 
-    -- if we're not a server:
-    
-    lm:connect("127.0.0.1", 8080)
+	-- wait until we have a connection
+	local conn = lunamesh:waitUntilClientConnected(10)
+	assert(conn, "Timed out")
 
-    -- wait until we have a connection
-    repeat
-        lm:listen()
-        love.timer.sleep(0.1)
-    until lm:isConnected()
-    
-    print("Connected to server")
-    print("Sending an echo")
-
-    -- create and send a packet
-    local echo_pkt = lm:createPkt(PKT_TYPE.ECHO.REQUEST, "Hello, Server!")
-    lm:sendToServer(echo_pkt)
+	-- create and send a packet
+	local echo_pkt = lunamesh:createPkt(PKT_TYPE.ECHO.REQUEST, "Hello, Server!")
+	lunamesh:sendToServer(echo_pkt)
 end
 
 function love.update(dt)
-    lm:listen() --you can use lm:update() if you like that instead
+	lunamesh:listen() --you can use lunamesh:update() if you like that instead
 end
 
 ----------------------------------------
 --net_handlers.lua
 ----------------------------------------
-local lm = require("LunaMesh")
+local lunamesh = require("lunamesh")
+local PKT_TYPE = require("net_handlers")
 
----Packets you yourself can implement
-local PKT_TYPE = {
-	ECHO = {
-		REQUEST = 301,
-		ANSWER = 302,
-	},
-}
+function love.load(args)
+	if args[1] == "--server" then
+		_G.IS_SERVER = true
+		lunamesh:setServer("127.0.0.1", 8080) -- ip can be nil
+		return
+	end
 
-lm:addPktHandler(PKT_TYPE.ECHO.REQUEST, function(self, pkt, ip, port)
-	print("Received an echo request", ip, port, pkt.data)
+	lunamesh:connect("127.0.0.1", 8089)
 
-	local answer_pkt = self:createPkt(PKT_TYPE.ECHO.ECHO_RESPONSE, { data = pkt.data })
-	self:sendToAddress(answer_pkt, ip, port)
-end)
+	-- wait until we have a connection
+	local conn = lunamesh:waitUntilClientConnected(10)
+	assert(conn, "Timed out")
 
-lm:addPktHandler(PKT_TYPE.ECHO.ANSWER, function(self, pkt, ip, port)
-	print("Received an echo response", ip, port, pkt.data)
-end)
+	-- create and send a packet
+	local echo_pkt = lunamesh:createPkt(PKT_TYPE.ECHO.REQUEST, "Hello, Server!")
+	lunamesh:sendToServer(echo_pkt)
+end
 
-return PKT_TYPE
+function love.update(dt)
+	lunamesh:listen() --you can use lunamesh:update() if you like that instead
+end
 ```
 
 If you want to add new protocols, or packets, just add them to the PKT_TYPE table, and implement a function for them, just like we did with the echo protocol.

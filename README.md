@@ -4,7 +4,7 @@
 ## Description
 LunaMesh is a simple networking library for lua / love2d. Aiming to simplify networking in projects.
 
-> [!NOTE] Note:
+> [!NOTE]
 > This is a WIP for the moment. Feel free to try it out, any input from anyone is welcome!
 
 #### Features
@@ -90,10 +90,10 @@ end)
 return PKT_TYPE
 ```
 
-If you want to add new protocols, or packets, just add them to the PKT_TYPE table, and implement a function for them, just like we did with for the echo protocol.
+If you want to add new protocols, or packets, just add them to the PKT_TYPE table, and implement a function for them, just like we did with the echo protocol.
 
 ## Documentation
-Before we create either a server, or a client, we need to know that **LunaMesh** already returns an instance. You don't need to instintiate it. The same one, no matter where in the love runtime you are. 
+Before we create either a server, or a client, know that **LunaMesh** returns an instance. You don't need to instintiate it. It will return the same one, no matter where in the love runtime you are. 
 
 ```lua
 local lunamesh = require("LunaMesh") --will always return te same instance everywhere
@@ -106,9 +106,9 @@ lunamesh:setServer("127.0.0.1", 18080)
 ```
 
 > [!WARNING] 
-> Some OSs don't allow ports below 1024. Use a high port number
+> Some OSs don't allow ports below 1024. Use a port above the reserved 1024. Check [wikipedia](https://en.wikipedia.org/wiki/List_of_TCP_and_UDP_port_numbers)
 
-The IP can be `nil` if you want to accept connections from anywhere, if you only want to accept from yoursel, then you set it to `"127.0.0.1"`.
+The IP can be `nil` if you want to accept connections from anywhere, if you only want to accept from yourself, then you set it to `"127.0.0.1"`.
 
 ## `:connect(ip, port)` 
 Connects to a specified server at an ip and port

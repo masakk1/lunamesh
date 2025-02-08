@@ -7,6 +7,9 @@ LunaMesh is a simple networking library for lua / love2d. Aiming to simplify net
 > [!NOTE]
 > This is a WIP for the moment. Feel free to try it out, any input from anyone is welcome!
 
+> [!WARN]
+> It expects to have `bitser` on `lib.bitser`. Feel free to modify this.
+
 #### Features
 1. Easily set a server and client
 2. Handle connections between server and client
@@ -116,7 +119,7 @@ repeat
 until lunamesh:isConnected()
 ```
 
-## `addPktHandler(pkt_type, callback?)`
+## `:addPktHandler(pkt_type, callback)`
 Implement your own handlers for the packets you need.
 Create a packet type:
 ```lua
@@ -136,11 +139,29 @@ luamesh:addPktHandler(PKT_TYPE.UPDATE.WORLD, function(self, pkt)
 end)
 
 -- A server example
-luamesh:addPktHandler(PKT_TYPE.UPDATE.INPUT, function(self, pkt, ip, port)
+luamesh:addPktHandler(PKT_TYPE.UPDATE.INPUT, function(self, pkt, ip, port, client)
     local data = pkt.data
     -- Do your thing
 end)
 ```
+
+## `:addHook(hookID, func)`
+Add hooks to expand internal functions.
+```lua
+--Creating a player entity when a client joins
+lunamesh:addHook("clientAdded", function(self, client)
+	clientList[client.clientID] = client
+
+	local player = Player.new()
+	clientList[client.clientID].player = player
+	entityList[client.clientID] = player
+end)
+```
+
+Currently supported hooks:
+1. (SERVER) `"clientAdded" -> (self: LunaMesh, client: Client)` - when a client has connected and been authorised
+2. (CLIENT) `"connectionSuccessful" -> (self: LunaMesh, clientID: clientID)` - when a client successfully connects to a server
+
 
 ## Modifying
 

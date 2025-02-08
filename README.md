@@ -7,7 +7,7 @@ LunaMesh is a simple networking library for lua / love2d. Aiming to simplify net
 > [!NOTE]
 > This is a WIP for the moment. Feel free to try it out, any input from anyone is welcome!
 
-> [!WARN]
+> [!WARNING]
 > It expects to have `bitser` on `lib.bitser`. Feel free to modify this.
 
 #### Features

@@ -2,7 +2,7 @@
 <p align="center">A basic starting point for networking in Lua</p>
 
 ## Description
-LuaMesh is a simple networking library for lua / love2d. Aiming to simplify networking in projects.
+LunaMesh is a simple networking library for lua / love2d. Aiming to simplify networking in projects.
 
 > [!NOTE] Note:
 > This is a WIP for the moment. Feel free to try it out, any input from anyone is welcome!

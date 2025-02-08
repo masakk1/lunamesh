@@ -9,3 +9,4 @@ Feature requests
 - [ ] Easier firewall rules
 - [ ] Add a challenge / proper secure authentication (somewhat) - Maybe use signatures? salt?
 - [ ] Attach custom properties to clients. Such as a player.
+- [ ] Simulate network issues: latency, packet loss, noise...

@@ -8,20 +8,20 @@ local deserialise = bitser.loads
 
 ---@alias ip string
 ---@alias port number
----@alias clientID number | any
+---@alias clientID number
 
 ---@class Client
 ---@field ip ip
 ---@field port port
 ---@field clientID clientID
 
+---@alias PKT_TYPE INTERNAL_PKT_TYPE -- should be a number, but in practice anything works fine
+
 ---@class Packet
----@field type INTERNAL_PKT_TYPE | number | any -- should be a number, but in practice anything works fine
+---@field type PKT_TYPE
 ---@field data any
 
----@alias PKT_TYPE INTERNAL_PKT_TYPE
-
----@alias PacketHandlerCallback fun(self: LunaMesh, pkt: Packet, ip: ip?, port: port?, client: Client?)
+---@alias PacketHandlerCallback fun(self: LunaMesh, pkt: Packet, ip: ip, port: port, client: Client)
 
 ---@alias INTERNAL_PKT_TYPE number
 local INTERNAL_PKT_TYPE = {
@@ -33,15 +33,24 @@ local INTERNAL_PKT_TYPE = {
 	},
 }
 
+---@enum LunaMeshHooks
+local HOOKS = {
+	clientAdded = "clientAdded",
+
+	connetionSuccessful = "connetionSuccessful",
+}
+
 --#endregion
 
 ---@class LunaMesh
 local LunaMesh = {
 	socket = socket.udp(),
 	handlers = {},
+	hooks = {},
 
 	--client
 	state = "disconnected",
+	clientID = nil,
 
 	--server
 	clients = {},
@@ -97,7 +106,8 @@ function LunaMesh:_handlePacket(pkt, ip, port)
 	local pkt_type = pkt.type
 
 	if pkt_type and self.handlers[pkt_type] then
-		self.handlers[pkt_type](self, pkt, ip, port)
+		local client = self:matchClient(ip, port)
+		self.handlers[pkt_type](self, pkt, ip, port, client)
 	end
 end
 
@@ -106,9 +116,28 @@ end
 ---@param handler PacketHandlerCallback
 function LunaMesh:addPktHandler(pkt_type, handler)
 	assert(pkt_type, "Packet type is required")
-	assert(type(handler) == "function", "Handler must be a function")
+	assert(handler and type(handler) == "function", "Handler must be a function")
 	self.handlers[pkt_type] = handler
 end
+
+---Add's a hook to listen for
+---@param hookID LunaMeshHooks
+---@param func function
+function LunaMesh:addHook(hookID, func)
+	assert(hookID, "Hook ID is required")
+	assert(func and type(func) == "function", "A function is required")
+
+	self.hooks[hookID] = func
+end
+
+---Calls a hook
+function LunaMesh:_callHook(hookID, ...)
+	if self.hooks[hookID] then
+		self.hooks[hookID](self, ...)
+	end
+end
+
+--#region Sending/Creating packets
 
 ---@param pkt_type PKT_TYPE
 function LunaMesh:createPkt(pkt_type, data, ...)
@@ -120,8 +149,6 @@ function LunaMesh:createPkt(pkt_type, data, ...)
 	}
 	return pkt
 end
-
---#region Sending packets
 
 ---@param pkt Packet
 ---@ip string
@@ -142,6 +169,14 @@ function LunaMesh:sendToServer(pkt)
 	self.socket:send(ser_pkt)
 end
 
+---@param pkt Packet
+function LunaMesh:sendToAllClients(pkt)
+	local ser_pkt = serialise(pkt)
+	for _, client in pairs(self.clients) do
+		self.socket:sendto(ser_pkt, client.ip, client.port)
+	end
+end
+
 --#endregion
 
 --#region Client management
@@ -155,9 +190,13 @@ function LunaMesh:addClient(ip, port)
 	local client = { ip = ip, port = port, clientID = clientID }
 	self.clients[clientID] = client
 
+	self:_callHook(HOOKS.clientAdded, client)
 	return client
 end
 
+---@param ip ip
+---@param port port
+---@return Client?
 function LunaMesh:matchClient(ip, port)
 	for _, client in pairs(self.clients) do
 		if client.ip == ip and client.port == port then
@@ -179,7 +218,7 @@ function LunaMesh:isConnected()
 end
 
 ---@param timeout number
----@return boolean
+---@return boolean, clientID
 function LunaMesh:waitUntilClientConnected(timeout)
 	local accumulator = 0
 
@@ -189,7 +228,7 @@ function LunaMesh:waitUntilClientConnected(timeout)
 		accumulator = accumulator + 0.1
 	until self:isConnected() or accumulator >= timeout
 
-	return self:isConnected()
+	return self:isConnected(), self.clientID
 end
 
 --#endregion
@@ -210,7 +249,11 @@ function LunaMesh:connect(ip, port)
 end
 LunaMesh:addPktHandler(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, function(self, pkt)
 	if self.state == "connecting" then
+		local data = pkt.data
 		self.state = "connected"
+		self.clientID = data.clientID
+
+		self:_callHook(HOOKS.connetionSuccessful, self.clientID)
 	end
 end)
 LunaMesh:addPktHandler(INTERNAL_PKT_TYPE.CONNECT.DENY, function(self, pkt)

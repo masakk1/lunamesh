@@ -7,13 +7,14 @@ local entityList = {}
 local player
 
 --#region Networking
+
 -- ECHO
-lunamesh:addPktHandler(PKT_TYPE.ECHO.ANSWER, function(self, pkt)
+local function answered_echo(self, pkt)
 	print("Received an echo response", pkt.data)
-end)
+end
 
 -- SYNC
-lunamesh:addPktHandler(PKT_TYPE.SYNC.WORLD, function(self, pkt)
+local function update_world(self, pkt)
 	local world_state = pkt.data
 	if not world_state then
 		return
@@ -29,7 +30,9 @@ lunamesh:addPktHandler(PKT_TYPE.SYNC.WORLD, function(self, pkt)
 
 		entity:applyState(entity_state)
 	end
-end)
+end
+lunamesh:addPktHandler(PKT_TYPE.ECHO.ANSWER, answered_echo)
+lunamesh:addPktHandler(PKT_TYPE.SYNC.WORLD, update_world)
 --#endregion
 
 --#region Entry point

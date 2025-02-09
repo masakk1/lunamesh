@@ -7,16 +7,17 @@ local clientList = {}
 local entityList = {}
 
 --#region Networking
+
 -- ECHO
-lunamesh:addPktHandler(PKT_TYPE.ECHO.REQUEST, function(self, pkt, ip, port)
+local function echo_request(self, pkt, ip, port) --connection-less
 	print("Received an echo request", ip, port, pkt.data)
 
 	local echo_pkt = self:createPkt(PKT_TYPE.ECHO.ANSWER, pkt.data or "")
 	self:sendToAddress(echo_pkt, ip, port)
-end)
+end
 
 -- SYNC
-local function updateClients()
+local function update_clients()
 	local world_state = {}
 
 	for clientID, client in pairs(clientList) do
@@ -26,7 +27,7 @@ local function updateClients()
 
 	lunamesh:sendToAllClients(lunamesh:createPkt(PKT_TYPE.SYNC.WORLD, world_state))
 end
-lunamesh:addPktHandler(PKT_TYPE.SYNC.INPUT, function(self, pkt, ip, port, client)
+local function client_input(self, pkt, ip, port, client)
 	if not client then
 		return
 	end -- which means that it isn't a known and authenticated client
@@ -36,15 +37,18 @@ lunamesh:addPktHandler(PKT_TYPE.SYNC.INPUT, function(self, pkt, ip, port, client
 
 	-- should probably validate the input
 	player:applyInput(input_state)
-end)
-
-lunamesh:addHook("clientAdded", function(self, client)
+end
+local function on_client_added(self, client)
 	clientList[client.clientID] = client
 
 	local player = Player.new()
 	clientList[client.clientID].player = player
 	entityList[client.clientID] = player
-end)
+end
+
+lunamesh:addPktHandler(PKT_TYPE.ECHO.REQUEST, echo_request)
+lunamesh:addPktHandler(PKT_TYPE.SYNC.INPUT, client_input)
+lunamesh:addHook("clientAdded", on_client_added)
 --#endregion
 
 --#region Entry point
@@ -61,7 +65,7 @@ function FixedUpdate(fdt)
 		end
 	end
 
-	updateClients()
+	update_clients()
 end
 function Draw()
 	for _, entity in pairs(entityList) do

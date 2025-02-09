@@ -95,15 +95,16 @@ local lunamesh = require("LunaMesh") --will always return te same instance every
 ```
 
 ## `:setServer(ip?, port)`
-LunaMesh is a client by default, set it a server with `:setServer(ip | nil, port)`
+LunaMesh is a client by default, set it a server with `:setServer(ip?, port)`
 ```lua
-lunamesh:setServer("127.0.0.1", 18080)
+lunamesh:setServer("127.0.0.1", 18080) --ip: string | port: integer
 ```
 
 > [!WARNING] 
 > Some OSs don't allow ports below 1024. Use a port above the reserved 1024. Check [wikipedia](https://en.wikipedia.org/wiki/List_of_TCP_and_UDP_port_numbers)
 
-The IP can be `nil` if you want to accept connections from anywhere, if you only want to accept from yourself, then you set it to `"127.0.0.1"`.
+The IP can be `nil` or `"*"` if you want to accept connections from anywhere.
+If you only want to accept connections from localhost, use `"127.0.0.1"`.
 
 ## `:connect(ip, port)` 
 Connects to a specified server at an ip and port
@@ -111,18 +112,16 @@ Connects to a specified server at an ip and port
 lunamesh:connect("127.0.0.1", 18080)
 ```
 
-LunaMesh also needs to *receive* packets, so `:listen()` repeatedly as well.
+LunaMesh also needs to *receive* packets while connecting.
+There's a function that simplifies this, `lumamesh:waitUntilClientConnected(timeout: number) -> connected: boolean, clientID: client.clientID`
 
 ```lua
 lunamesh:connect("127.0.0.1", 18080)
-
-repeat
-    lunamesh:listen()
-    love.timer.sleep(0.1) --use any function to wait. eg: socket.sleep
-until lunamesh:isConnected()
+local connected, clientID = lunamesh:waitUntilClientConnected(10) --WARNING: this freezes the thread.
+assert(connected, "Couldn't connect to server. Timed out.")
 ```
 
-## `:addPktHandler(pkt_type, callback)`
+## `:setPktHandler(pkt_type, callback)`
 Implement your own handlers for the packets you need.
 Create a packet type:
 ```lua
@@ -135,30 +134,34 @@ local PKT_TYPE = {
 ```
 Then implement the handler:
 ```lua
--- A client example
-luamesh:addPktHandler(PKT_TYPE.UPDATE.WORLD, function(self, pkt)
+-- on the client
+local function update_world(self, pkt)
     local data = pkt.data
-    -- Do your thing
-end)
+    World:update(data)
+end
+luamesh:setPktHandler(PKT_TYPE.UPDATE.WORLD, update_world)
 
--- A server example
-luamesh:addPktHandler(PKT_TYPE.UPDATE.INPUT, function(self, pkt, ip, port, client)
+-- on the server
+local function client_input(self, pkt, ip, port, client)
+	if not client then return end --dismiss if client is not connected
     local data = pkt.data
-    -- Do your thing
-end)
+    client.player:applyInput(data)
+end
+luamesh:setPktHandler(PKT_TYPE.UPDATE.INPUT, client_input)
 ```
 
-## `:addHook(hookID, func)`
-Add hooks to expand internal functions.
+## `:subscribeHook(hookID, func)`
+Subscribe to a hook to expand internal functions. Such has connected clients.
 ```lua
 --Creating a player entity when a client joins
-lunamesh:addHook("clientAdded", function(self, client)
+local function create_player(self, client)
 	clientList[client.clientID] = client
 
 	local player = Player.new()
 	clientList[client.clientID].player = player
 	entityList[client.clientID] = player
-end)
+end
+lunamesh:subscribeHook("clientAdded", create_player)
 ```
 
 Currently supported hooks:

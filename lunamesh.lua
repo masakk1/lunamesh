@@ -111,21 +111,24 @@ function LunaMesh:_handlePacket(pkt, ip, port)
 	end
 end
 
----Add's a function to handle specific packets
+---Associate a handler (function) to a packet type
 ---@param pkt_type PKT_TYPE
 ---@param handler PacketHandlerCallback
-function LunaMesh:addPktHandler(pkt_type, handler)
+function LunaMesh:setPktHandler(pkt_type, handler)
 	assert(pkt_type, "Packet type is required")
 	assert(handler and type(handler) == "function", "Handler must be a function")
+	assert(not self.handlers[pkt_type], "Cannot assign two handlers to the same packet type")
+
 	self.handlers[pkt_type] = handler
 end
 
 ---Add's a hook to listen for
 ---@param hookID LunaMeshHooks
 ---@param func function
-function LunaMesh:addHook(hookID, func)
-	assert(hookID, "Hook ID is required")
+function LunaMesh:subscribeHook(hookID, func)
+	assert(hookID, "A Hook ID is required")
 	assert(func and type(func) == "function", "A function is required")
+	assert(not self.hooks[hookID], "Cannot assign two hooks to the same event")
 
 	self.hooks[hookID] = func
 end
@@ -151,8 +154,8 @@ function LunaMesh:createPkt(pkt_type, data, ...)
 end
 
 ---@param pkt Packet
----@ip string
----@port number
+---@param ip ip
+---@param port port
 function LunaMesh:sendToAddress(pkt, ip, port)
 	local ser_pkt = serialise(pkt)
 	self.socket:sendto(ser_pkt, ip, port)
@@ -247,7 +250,7 @@ function LunaMesh:connect(ip, port)
 
 	self.state = "connecting"
 end
-LunaMesh:addPktHandler(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, function(self, pkt)
+local function connection_successful(self, pkt)
 	if self.state == "connecting" then
 		local data = pkt.data
 		self.state = "connected"
@@ -255,22 +258,24 @@ LunaMesh:addPktHandler(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, function(self, pkt)
 
 		self:_callHook(HOOKS.connetionSuccessful, self.clientID)
 	end
-end)
-LunaMesh:addPktHandler(INTERNAL_PKT_TYPE.CONNECT.DENY, function(self, pkt)
+end
+local function connection_denied(self, pkt)
 	-- Can't yet trust a deny packet, and allow someone to disconnect us from a match
 	if self.state == "connecting" then
 		self.state = "disconnected"
 		self.socket:setpeername("*")
 	end
-end)
+end
+LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, connection_successful)
+LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.DENY, connection_denied)
 
 -- Server connection
-
-LunaMesh:addPktHandler(INTERNAL_PKT_TYPE.CONNECT.REQUEST, function(self, pkt, ip, port)
+local function connection_requested(self, pkt, ip, port)
 	local client = self:addClient(ip, port)
 	local answer_pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, { clientID = client.clientID })
 	self:sendToClient(answer_pkt, client)
-end)
+end
+LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.REQUEST, connection_requested)
 --#endregion
 
 return LunaMesh.new()

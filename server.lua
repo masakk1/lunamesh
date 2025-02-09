@@ -46,9 +46,9 @@ local function on_client_added(self, client)
 	entityList[client.clientID] = player
 end
 
-lunamesh:addPktHandler(PKT_TYPE.ECHO.REQUEST, echo_request)
-lunamesh:addPktHandler(PKT_TYPE.SYNC.INPUT, client_input)
-lunamesh:addHook("clientAdded", on_client_added)
+lunamesh:setPktHandler(PKT_TYPE.ECHO.REQUEST, echo_request)
+lunamesh:setPktHandler(PKT_TYPE.SYNC.INPUT, client_input)
+lunamesh:subscribeHook("clientAdded", on_client_added)
 --#endregion
 
 --#region Entry point

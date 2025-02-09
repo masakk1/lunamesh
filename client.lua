@@ -31,8 +31,8 @@ local function update_world(self, pkt)
 		entity:applyState(entity_state)
 	end
 end
-lunamesh:addPktHandler(PKT_TYPE.ECHO.ANSWER, answered_echo)
-lunamesh:addPktHandler(PKT_TYPE.SYNC.WORLD, update_world)
+lunamesh:setPktHandler(PKT_TYPE.ECHO.ANSWER, answered_echo)
+lunamesh:setPktHandler(PKT_TYPE.SYNC.WORLD, update_world)
 --#endregion
 
 --#region Entry point

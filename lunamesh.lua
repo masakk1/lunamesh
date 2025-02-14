@@ -40,6 +40,13 @@ local HOOKS = {
 	connetionSuccessful = "connetionSuccessful",
 }
 
+local function table_merge(t1, t2)
+	for k, v in pairs(t2) do
+		t1[k] = v
+	end
+	return t1
+end
+
 --#endregion
 
 ---@class LunaMesh
@@ -143,14 +150,15 @@ end
 --#region Sending/Creating packets
 
 ---@param pkt_type PKT_TYPE
-function LunaMesh:createPkt(pkt_type, data, ...)
+---@param data any?
+---@param args table? Extra arguments attached to the packet
+function LunaMesh:createPkt(pkt_type, data, args)
 	assert(pkt_type, "Packet type is required")
 	local pkt = {
 		type = pkt_type,
 		data = data, --fine if nil
-		...,
 	}
-	return pkt
+	return args and table_merge(pkt, args) or pkt
 end
 
 ---@param pkt Packet

@@ -11,7 +11,6 @@
 ## Feature requests
 - [ ] Write a full documentation
 - [ ] Easier firewall rules
-- [ ] Add a challenge / proper secure authentication (somewhat) - Maybe use signatures? salt?
-- [ ] Attach custom properties to clients. Such as a player.
+- [X] Attach custom properties to clients. Such as a player. -> Can be done by client.player = Player(). Client is a reference in the hook.
 - [ ] Simulate network issues: latency, packet loss, noise...
-- [ ] Sending safe packets - that will absolutely reach the player
+- [X] Sending reliable packets - that will absolutely reach the player

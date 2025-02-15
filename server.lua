@@ -57,7 +57,7 @@ function Load(args)
 end
 function Update(dt) end
 function FixedUpdate(fdt)
-	lunamesh:listen()
+	lunamesh:listen(fdt)
 
 	for _, entity in pairs(entityList) do
 		if not entity.is_player then

@@ -46,11 +46,14 @@ function Load(args)
 
 	player = Player.new()
 	entityList[clientID] = player
+
+	local echo_pkt = lunamesh:createPkt(PKT_TYPE.ECHO.REQUEST, "Hello, word!", { reliable = true })
+	lunamesh:sendToServer(echo_pkt)
 end
 function Update(dt) end
 
 function FixedUpdate(fdt)
-	lunamesh:listen()
+	lunamesh:listen(fdt)
 
 	for _, entity in pairs(entityList) do
 		if not entity.is_player then

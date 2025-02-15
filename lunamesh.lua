@@ -91,7 +91,11 @@ function LunaMesh:setServer(ip, port)
 	self.is_server = true
 end
 
+---@param dt number
 function LunaMesh:listen(dt)
+	if not dt then
+		error("dt is required")
+	end
 	if self.is_server then
 		self:_serverListen()
 	else
@@ -242,12 +246,6 @@ end
 --#endregion
 
 --#region Pretty API wrappers
-
----Alias of `LunaMesh:listen()`
-function LunaMesh:update()
-	self:listen()
-end
-
 function LunaMesh:isConnected()
 	return self.state == "connected"
 end
@@ -258,7 +256,7 @@ function LunaMesh:waitUntilClientConnected(timeout)
 	local accumulator = 0
 
 	repeat
-		self:listen()
+		self:listen(0.1)
 		socket.sleep(0.1)
 		accumulator = accumulator + 0.1
 	until self:isConnected() or accumulator >= timeout
@@ -287,7 +285,7 @@ function LunaMesh:_matchIncomingInternalProtocolHandler(pkt, ip, port, client)
 	end
 end
 function LunaMesh:_matchOutgoingInternalProtocolHandler(pkt, ip, port, client)
-	if pkt.rel then
+	if pkt.rel and not self.reliable_pkt_watcher[pkt.seq] then
 		self:_handleOutgoingReliablePacket(pkt, ip, port, client)
 	end
 end
@@ -309,7 +307,7 @@ function LunaMesh:_handleOutgoingReliablePacket(pkt, ip, port, client)
 	pkt.seq = self.reliable_pkt_seq
 	self.reliable_pkt_seq = self.reliable_pkt_seq + 1
 
-	self.reliable_pkt_watcher[pkt.seq] = { pkt = pkt, ip = pkt.ip, port = pkt.port, count = 0 }
+	self.reliable_pkt_watcher[pkt.seq] = { pkt = pkt, ip = ip, port = port, count = 0 }
 end
 function LunaMesh:_watchUnacknowledgedReliablePackets()
 	for seq, meta in pairs(self.reliable_pkt_watcher) do
@@ -344,7 +342,7 @@ LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.RELIABLE.ACK, handle_reliable_pkt_ackno
 function LunaMesh:connect(ip, port)
 	self.socket:setsockname("*", 0) --use ephemeral port
 
-	local pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.REQUEST, nil)
+	local pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.REQUEST, nil, { reliable = true })
 	self.socket:setpeername(ip, port)
 	self:sendToServer(pkt)
 
@@ -372,7 +370,11 @@ LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.DENY, connection_denied)
 -- Server connection
 local function connection_requested(self, pkt, ip, port)
 	local client = self:addClient(ip, port)
-	local answer_pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, { clientID = client.clientID })
+	local answer_pkt = self:createPkt(
+		INTERNAL_PKT_TYPE.CONNECT.ACCEPT,
+		{ clientID = client.clientID },
+		{ reliable = true }
+	)
 	self:sendToClient(answer_pkt, client)
 end
 LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.REQUEST, connection_requested)

@@ -91,7 +91,11 @@ function LunaMesh:setServer(ip, port)
 	self.is_server = true
 end
 
+---@param dt number
 function LunaMesh:listen(dt)
+	if not dt then
+		error("dt is required")
+	end
 	if self.is_server then
 		self:_serverListen()
 	else
@@ -258,7 +262,7 @@ function LunaMesh:waitUntilClientConnected(timeout)
 	local accumulator = 0
 
 	repeat
-		self:listen()
+		self:listen(0.1)
 		socket.sleep(0.1)
 		accumulator = accumulator + 0.1
 	until self:isConnected() or accumulator >= timeout
@@ -344,7 +348,7 @@ LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.RELIABLE.ACK, handle_reliable_pkt_ackno
 function LunaMesh:connect(ip, port)
 	self.socket:setsockname("*", 0) --use ephemeral port
 
-	local pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.REQUEST, nil)
+	local pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.REQUEST, nil, { reliable = true })
 	self.socket:setpeername(ip, port)
 	self:sendToServer(pkt)
 
@@ -372,7 +376,11 @@ LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.DENY, connection_denied)
 -- Server connection
 local function connection_requested(self, pkt, ip, port)
 	local client = self:addClient(ip, port)
-	local answer_pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, { clientID = client.clientID })
+	local answer_pkt = self:createPkt(
+		INTERNAL_PKT_TYPE.CONNECT.ACCEPT,
+		{ clientID = client.clientID },
+		{ reliable = true }
+	)
 	self:sendToClient(answer_pkt, client)
 end
 LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.REQUEST, connection_requested)

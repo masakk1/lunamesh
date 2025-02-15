@@ -246,12 +246,6 @@ end
 --#endregion
 
 --#region Pretty API wrappers
-
----Alias of `LunaMesh:listen()`
-function LunaMesh:update()
-	self:listen()
-end
-
 function LunaMesh:isConnected()
 	return self.state == "connected"
 end

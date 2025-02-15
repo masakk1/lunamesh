@@ -1,6 +1,5 @@
 local socket = require("socket")
 local bitser = require("lib.bitser")
-local pretty = require("lib.batteries.pretty")
 
 local serialise = bitser.dumps
 local deserialise = bitser.loads

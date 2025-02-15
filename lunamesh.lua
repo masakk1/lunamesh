@@ -1,5 +1,6 @@
 local socket = require("socket")
 local bitser = require("lib.bitser")
+local pretty = require("lib.batteries.pretty")
 
 local serialise = bitser.dumps
 local deserialise = bitser.loads
@@ -96,7 +97,7 @@ function LunaMesh:listen(dt)
 	else
 		self:_clientListen()
 	end
-	self:_updateInternalProtocolHandlers(dt)
+	self:_updateInternalProtocolHandlers(dt or 0)
 end
 function LunaMesh:_serverListen()
 	repeat
@@ -125,66 +126,12 @@ function LunaMesh:_handlePacket(pkt, ip, port)
 
 	if pkt_type and self.handlers[pkt_type] then
 		local client = self:matchClient(ip, port)
-		self:_matchInternalProtocolHandler(pkt, ip, port, client)
+		self:_matchIncomingInternalProtocolHandler(pkt, ip, port, client)
 		self.handlers[pkt_type](self, pkt, ip, port, client)
 	end
 end
 
 --#region Internal Protocol Extensions
-LunaMesh.accumulators = {
-	unacked_rel_pkts = { t = 0, threshold = 1, func = LunaMesh._watchUnacknowledgedReliablePackets },
-}
-function LunaMesh:_updateInternalProtocolHandlers(dt)
-	for k, acc in pairs(self.accumulators) do
-		acc.t = acc.t + dt
-		if acc.t >= acc.threshold then
-			acc.t = acc.t - acc.threshold
-			acc.func(self)
-		end
-	end
-end
-function LunaMesh:_matchInternalProtocolHandler(pkt, ip, port, client)
-	if pkt.rel then
-		self:_handleIncomingReliablePacket(pkt, ip, port, client)
-	end
-	if pkt.relack then
-		self:_handleReliablePacketAcknowledgment(pkt, ip, port, client)
-	end
-end
-
--- Reliable packets
-LunaMesh.reliable_pkt_watcher = {}
-LunaMesh.reliable_pkt_seq = 1
-LunaMesh.reliable_pkt_count_giveup = 10
-function LunaMesh:_handleReliablePacketAcknowledgment(ack_pkt, ip, port, client)
-	if (not ack_pkt.ackseq) or not self.reliable_pkt_watcher[ack_pkt.ackseq] then
-		return
-	end
-
-	table.remove(self.reliable_pkt_watcher, ack_pkt.ackseq)
-end
-function LunaMesh:_handleIncomingReliablePacket(pkt, ip, port, client)
-	local ack_pkt = self:createPkt(INTERNAL_PKT_TYPE.RELIABLE.ACK, nil, { ackseq = pkt.seq, relack = true })
-
-	if ip and port or self.is_server then
-		self:sendToAddress(ack_pkt, ip, port)
-	else
-		self:sendToServer(ack_pkt)
-	end
-end
-function LunaMesh:_watchUnacknowledgedReliablePackets()
-	for seq, meta in pairs(self.reliable_pkt_watcher) do
-		if self.is_server then
-			self:sendToAddress(meta.pkt, meta.ip, meta.port)
-		else
-			self:sendToServer(meta.pkt)
-		end
-		meta.count = meta.count + 1
-		if meta.count > self.reliable_pkt_count_giveup then
-			table.remove(self.reliable_pkt_watcher, seq)
-		end
-	end
-end
 --#endregion
 
 ---Associate a handler (function) to a packet type
@@ -230,7 +177,6 @@ function LunaMesh:createPkt(pkt_type, data, config)
 	config = config or {}
 	if config.reliable then
 		pkt.rel = true
-		pkt.seq = self.reliable_pkt_seq
 	end
 	return pkt
 end
@@ -239,25 +185,29 @@ end
 ---@param ip ip
 ---@param port port
 function LunaMesh:sendToAddress(pkt, ip, port)
+	self:_matchOutgoingInternalProtocolHandler(pkt, ip, port, nil)
 	local ser_pkt = serialise(pkt)
 	self.socket:sendto(ser_pkt, ip, port)
 end
 
 ---@param client Client
 function LunaMesh:sendToClient(pkt, client)
+	self:_matchOutgoingInternalProtocolHandler(pkt, client.ip, client.port, client)
 	self:sendToAddress(pkt, client.ip, client.port)
 end
 
 ---@param pkt Packet
 function LunaMesh:sendToServer(pkt)
+	self:_matchOutgoingInternalProtocolHandler(pkt)
 	local ser_pkt = serialise(pkt)
 	self.socket:send(ser_pkt)
 end
 
 ---@param pkt Packet
 function LunaMesh:sendToAllClients(pkt)
-	local ser_pkt = serialise(pkt)
 	for _, client in pairs(self.clients) do
+		self:_matchOutgoingInternalProtocolHandler(pkt, client.ip, client.port)
+		local ser_pkt = serialise(pkt)
 		self.socket:sendto(ser_pkt, client.ip, client.port)
 	end
 end
@@ -316,6 +266,74 @@ function LunaMesh:waitUntilClientConnected(timeout)
 	return self:isConnected(), self.clientID
 end
 
+--#endregion
+
+--#region Internal protocols
+
+LunaMesh.accumulators = {
+	unacked_rel_pkts = { t = 0, threshold = 3 },
+}
+function LunaMesh:_updateInternalProtocolHandlers(dt)
+	local acc = self.accumulators.unacked_rel_pkts
+	acc.t = acc.t + dt
+	if acc.t >= acc.threshold then
+		acc.t = acc.t - acc.threshold
+		self:_watchUnacknowledgedReliablePackets()
+	end
+end
+function LunaMesh:_matchIncomingInternalProtocolHandler(pkt, ip, port, client)
+	if pkt.rel then
+		self:_handleIncomingReliablePacket(pkt, ip, port, client)
+	end
+end
+function LunaMesh:_matchOutgoingInternalProtocolHandler(pkt, ip, port, client)
+	if pkt.rel then
+		self:_handleOutgoingReliablePacket(pkt, ip, port, client)
+	end
+end
+
+-- Reliable packets
+LunaMesh.reliable_pkt_watcher = {}
+LunaMesh.reliable_pkt_seq = 1
+LunaMesh.reliable_pkt_count_giveup = 10
+function LunaMesh:_handleIncomingReliablePacket(pkt, ip, port, client)
+	local ack_pkt = self:createPkt(INTERNAL_PKT_TYPE.RELIABLE.ACK, pkt.seq)
+
+	if (ip and port) or self.is_server then
+		self:sendToAddress(ack_pkt, ip, port)
+	else
+		self:sendToServer(ack_pkt)
+	end
+end
+function LunaMesh:_handleOutgoingReliablePacket(pkt, ip, port, client)
+	pkt.seq = self.reliable_pkt_seq
+	self.reliable_pkt_seq = self.reliable_pkt_seq + 1
+
+	self.reliable_pkt_watcher[pkt.seq] = { pkt = pkt, ip = pkt.ip, port = pkt.port, count = 0 }
+end
+function LunaMesh:_watchUnacknowledgedReliablePackets()
+	for seq, meta in pairs(self.reliable_pkt_watcher) do
+		if self.is_server then
+			self:sendToAddress(meta.pkt, meta.ip, meta.port)
+		else
+			self:sendToServer(meta.pkt)
+		end
+
+		meta.count = meta.count + 1
+		if meta.count > self.reliable_pkt_count_giveup then
+			self.reliable_pkt_watcher[seq] = nil
+		end
+	end
+end
+local function handle_reliable_pkt_acknowledgment(self, ack_pkt, ip, port, client)
+	--data is the ACK seq
+	if (not ack_pkt.data) or not self.reliable_pkt_watcher[ack_pkt.data] then
+		return
+	end
+
+	table.remove(self.reliable_pkt_watcher, ack_pkt.data)
+end
+LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.RELIABLE.ACK, handle_reliable_pkt_acknowledgment)
 --#endregion
 
 --#region Connection protocol

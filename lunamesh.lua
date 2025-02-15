@@ -307,7 +307,7 @@ function LunaMesh:_handleOutgoingReliablePacket(pkt, ip, port, client)
 	pkt.seq = self.reliable_pkt_seq
 	self.reliable_pkt_seq = self.reliable_pkt_seq + 1
 
-	self.reliable_pkt_watcher[pkt.seq] = { pkt = pkt, ip = pkt.ip, port = pkt.port, count = 0 }
+	self.reliable_pkt_watcher[pkt.seq] = { pkt = pkt, ip = ip, port = port, count = 0 }
 end
 function LunaMesh:_watchUnacknowledgedReliablePackets()
 	for seq, meta in pairs(self.reliable_pkt_watcher) do

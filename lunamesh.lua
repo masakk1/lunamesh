@@ -285,7 +285,7 @@ function LunaMesh:_matchIncomingInternalProtocolHandler(pkt, ip, port, client)
 	end
 end
 function LunaMesh:_matchOutgoingInternalProtocolHandler(pkt, ip, port, client)
-	if pkt.rel then
+	if pkt.rel and not self.reliable_pkt_watcher[pkt.seq] then
 		self:_handleOutgoingReliablePacket(pkt, ip, port, client)
 	end
 end

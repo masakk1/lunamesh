@@ -18,15 +18,17 @@ jobs:
       with:
         luaVersion: "luajit-2.1.0-beta3"
 
+    # leafo's github action doesn't work. So we install it manually
     - name: Set up LuaRocks
-      uses: leafo/gh-actions-luarocks@v4
+      run: |
+        apt install luajit
 
     - name: Install dependencies
       run: |
-        sudo luarocks install busted
-        sudo luarocks install luacov
-        sudo luarocks install luasocket
-        sudo luarocks install bitser
+        luarocks install busted
+        luarocks install luacov
+        luarocks install luasocket
+        luarocks install bitser
 
     - name: Run tests
       run: |

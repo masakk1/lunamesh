@@ -1,5 +1,5 @@
 local socket = require("socket")
-local bitser = require("lib.bitser")
+local bitser = require("lib.bitser") or require("bitser")
 
 local serialise = bitser.dumps
 local deserialise = bitser.loads

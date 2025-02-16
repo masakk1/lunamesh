@@ -1,15 +1,16 @@
-local LunaMesh = require("lunamesh").class
+local LunaMesh = require("lunamesh")
 local socket = require("socket")
 
 local helper = {}
 helper.__index = helper
 helper.base_port = 47000
+local seed = os.time()
+math.randomseed(seed)
 helper.port_accumulator = math.random(0, 900)
 
 function helper.setupFullClientServerConnection()
 	local port = helper.base_port + helper.port_accumulator
 	helper.port_accumulator = helper.port_accumulator + 1
-	print("Using port " .. port)
 
 	local server, client = helper.setupClientServer(port)
 
@@ -18,7 +19,7 @@ function helper.setupFullClientServerConnection()
 		return closed
 	end
 
-	local server_thread = helper.serverHostCorountine(server, closed_check)
+	local server_thread = helper.serverHostCorountine(server)
 	local client_thread = helper.clientConnectionCorountine(client, function()
 		closed = true
 	end)
@@ -26,23 +27,19 @@ function helper.setupFullClientServerConnection()
 end
 
 function helper.setupClientServer(port)
-	local server = LunaMesh.new()
-	local client = LunaMesh.new()
+	local server = LunaMesh.fresh_instance()
+	local client = LunaMesh.fresh_instance()
 
 	server:setServer("127.0.0.1", port)
 	client:connect("127.0.0.1", port)
 	return server, client
 end
 
-function helper.serverHostCorountine(server, closed_check)
-	assert(closed_check, "must provide a function to check if we're done")
+function helper.serverHostCorountine(server)
 	assert(server, "must provide a server")
-	local server_thread = coroutine.create(function()
-		while not closed_check() do
-			server:listen(0.1)
-			coroutine.yield()
-		end
-	end)
+	local server_thread = function(dt)
+		server:listen(dt)
+	end
 
 	return server_thread
 end
@@ -51,23 +48,22 @@ function helper.clientConnectionCorountine(client, mark_finish)
 	assert(mark_finish, "must provide a function to mark the connection loop as done")
 	assert(client, "must provide a connected client")
 
-	local client_thread = coroutine.create(function()
-		repeat
-			client:listen(0.1)
-			coroutine.yield()
-		until client:isConnected()
+	local client_thread = function(dt)
+		client:listen(dt)
 
-		mark_finish()
-	end)
+		if client:isConnected() then
+			mark_finish()
+		end
+	end
 
 	return client_thread
 end
 
-function helper.runCorountineLoopUntil(closed_check, timeout, coroutines)
+function helper.runCorountineLoopUntil(closed_check, timeout, update_funcs)
 	local accumulator = 0
 	while not closed_check() and accumulator <= timeout do
-		for _, corountine in pairs(coroutines) do
-			coroutine.resume(corountine)
+		for _, update_func in pairs(update_funcs) do
+			update_func(0.1)
 		end
 		socket.sleep(0.1)
 		accumulator = accumulator + 0.1

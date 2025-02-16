@@ -18,8 +18,9 @@ jobs:
       run: |
         sudo apt install luajit
         
-    - name: Set up LuaRocks
-      uses: leafo/gh-actions-luarocks@v4
+    - name: Install LuaRocks
+      run: |
+        sudo apt install luarocks
       
     - name: Install dependencies
       run: |

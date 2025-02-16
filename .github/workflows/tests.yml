@@ -14,16 +14,16 @@ jobs:
     - uses: actions/checkout@v4
 
     # leafo's github action doesn't work. So we install it manually
-    - name: Set up LuaRocks
+    - name: Install LuaJIT
       run: |
-        apt install luajit
+        sudo apt install luajit
 
     - name: Install dependencies
       run: |
-        luarocks install busted
-        luarocks install luacov
-        luarocks install luasocket
-        luarocks install bitser
+        sudo luarocks install busted
+        sudo luarocks install luacov
+        sudo luarocks install luasocket
+        sudo luarocks install bitser
 
     - name: Run tests
       run: |

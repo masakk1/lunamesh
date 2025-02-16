@@ -3,10 +3,16 @@ local bitser = require("lib.bitser")
 
 local serialise = bitser.dumps
 local deserialise = bitser.loads
-local _LUNAMESH_DEBUG = false
+local _LUNAMESH_DEBUG = true
+local _LUNAMESH_RELIABLES_DEBUG = true
 
 local function debugprint(...)
 	if _LUNAMESH_DEBUG then
+		print(...)
+	end
+end
+local function debugprintif(condition, ...)
+	if _LUNAMESH_DEBUG and condition then
 		print(...)
 	end
 end
@@ -28,7 +34,7 @@ end
 ---@field type PKT_TYPE
 ---@field data any
 
----@alias PacketHandlerCallback fun(self: LunaMesh, pkt: Packet, ip: ip, port: port, client: Client)
+---@alias PacketHandlerCallback fun(self: LunaMesh, pkt: Packet, ip: ip?, port: port?, client: Client?)
 
 ---@alias INTERNAL_PKT_TYPE number
 local INTERNAL_PKT_TYPE = {
@@ -46,48 +52,56 @@ local INTERNAL_PKT_TYPE = {
 ---@enum LunaMeshHooks
 local HOOKS = {
 	clientAdded = "clientAdded",
-
 	connetionSuccessful = "connetionSuccessful",
 }
 
---credit: batteries
---maps a sequence {a, b, c} -> {f(a), f(b), f(c)}
--- (automatically drops any nils to keep a sequence, so can be used to simultaneously map and filter)
-local function functional_map(t, f)
-	local result = {}
-	for i = 1, #t do
-		local v = f(t[i], i)
-		if v ~= nil then
-			table.insert(result, v)
-		end
-	end
-	return result
-end
+---@class LunaMesh
+---@field socket any
+---@field handlers table<PKT_TYPE, PacketHandlerCallback>
+---@field hooks table<LunaMeshHooks, PacketHandlerCallback>
+---@field state "disconnected" | "connecting" | "connected"
+---@field clientID clientID?
+---@field clients table<clientID, Client>
+---@field client_count number
+---@field max_clients number
+---@field accumulators table<string, { t: number, threshold: number }>
+---@field reliable_pkt_watcher table<number, { pkt: Packet, ip: ip, port: port, count: number }>
+---@field reliable_pkt_seq number
+---@field reliable_pkt_count_giveup number
+local LunaMesh = {}
+LunaMesh.__index = LunaMesh
 
 --#endregion
 
----@class LunaMesh
----@field socket any
-local LunaMesh = {
-	socket = nil,
-	handlers = {},
-	hooks = {},
+function LunaMesh.fresh_instance(...)
+	assert(select("#", ...) == 0, "expected 0 arguments, got `" .. select("#", ...) .. "` instead. Did you use `:`?`")
+	local self = setmetatable({
+		socket = socket.udp(),
 
-	--client
-	state = "disconnected",
-	clientID = nil,
+		handlers = {},
+		hooks = {},
 
-	--server
-	clients = {},
-	client_count = 1,
-	max_clients = 12,
-}
-LunaMesh.__index = LunaMesh
+		--client
+		state = "disconnected",
+		clientID = nil,
 
-function LunaMesh.new()
-	local self = setmetatable({}, LunaMesh)
-	self.socket = socket.udp()
+		--server
+		clients = {},
+		client_count = 1,
+		max_clients = 12,
+
+		accumulators = {
+			unacked_rel_pkts = { t = 0, threshold = 1 },
+		},
+
+		reliable_pkt_watcher = {},
+		reliable_pkt_seq = 1,
+		reliable_pkt_count_giveup = 10,
+	}, LunaMesh)
+
 	self.socket:settimeout(0)
+
+	self:_invokeInternalProtocols()
 	return self
 end
 
@@ -188,9 +202,14 @@ function LunaMesh:createPkt(pkt_type, data, config)
 		data = data, --fine if nil
 	}
 	config = config or {}
-	if config.reliable then
-		pkt.rel = true
+	pkt.relc = config.reliable_custom or (config.reliable_custom_ack and true or nil)
+	pkt.rela = config.reliable_auto
+	pkt.seq = config.reliable_custom_ack
+	if pkt.relc and not pkt.seq then
+		pkt.seq = self.reliable_pkt_seq
+		self.reliable_pkt_seq = self.reliable_pkt_seq + 1
 	end
+
 	return pkt
 end
 
@@ -198,7 +217,7 @@ end
 ---@param ip ip
 ---@param port port
 function LunaMesh:sendToAddress(pkt, ip, port)
-	self:_matchOutgoingInternalProtocolHandler(pkt, ip, port, nil)
+	self:_matchOutgoingInternalProtocolHandler(pkt, ip, port)
 	local ser_pkt = serialise(pkt)
 	self.socket:sendto(ser_pkt, ip, port)
 end
@@ -276,10 +295,11 @@ end
 --#endregion
 
 --#region Internal protocols
+function LunaMesh:_invokeInternalProtocols()
+	self:_internalProtocolReliablePackets()
+	self:_internalProtocolConnection()
+end
 
-LunaMesh.accumulators = {
-	unacked_rel_pkts = { t = 0, threshold = 3 },
-}
 function LunaMesh:_updateInternalProtocolHandlers(dt)
 	local acc = self.accumulators.unacked_rel_pkts
 	acc.t = acc.t + dt
@@ -289,22 +309,22 @@ function LunaMesh:_updateInternalProtocolHandlers(dt)
 	end
 end
 function LunaMesh:_matchIncomingInternalProtocolHandler(pkt, ip, port, client)
-	if pkt.rel then
+	if pkt.relc or pkt.rela then --incoming reliable_custom or auto
 		self:_handleIncomingReliablePacket(pkt, ip, port, client)
 	end
 end
 function LunaMesh:_matchOutgoingInternalProtocolHandler(pkt, ip, port, client)
-	if pkt.rel and not self.reliable_pkt_watcher[pkt.seq] then
+	if pkt.rela or pkt.relc then
 		self:_handleOutgoingReliablePacket(pkt, ip, port, client)
 	end
 end
 
 -- Reliable packets
-LunaMesh.reliable_pkt_watcher = {}
-LunaMesh.reliable_pkt_seq = 1
-LunaMesh.reliable_pkt_count_giveup = 10
 function LunaMesh:_handleIncomingReliablePacket(pkt, ip, port, client)
-	local ack_pkt = self:createPkt(INTERNAL_PKT_TYPE.RELIABLE.ACK, pkt.seq)
+	if not pkt.rela then
+		return
+	end
+	local ack_pkt = self:createPkt(INTERNAL_PKT_TYPE.RELIABLE.ACK, pkt.seq, { reliable_auto = true })
 
 	if (ip and port) or self.is_server then
 		self:sendToAddress(ack_pkt, ip, port)
@@ -313,21 +333,14 @@ function LunaMesh:_handleIncomingReliablePacket(pkt, ip, port, client)
 	end
 end
 function LunaMesh:_handleOutgoingReliablePacket(pkt, ip, port, client)
-	pkt.seq = self.reliable_pkt_seq
-	self.reliable_pkt_seq = self.reliable_pkt_seq + 1
-
-	self.reliable_pkt_watcher[pkt.seq] = { pkt = pkt, ip = ip, port = port, count = 0 }
+	local seq = pkt.seq or pkt.data
+	if self.reliable_pkt_watcher[seq] then
+		return
+	end
+	self.reliable_pkt_watcher[seq] = { pkt = pkt, ip = ip, port = port, count = 1 }
 end
 function LunaMesh:_watchUnacknowledgedReliablePackets()
 	for seq, meta in pairs(self.reliable_pkt_watcher) do
-		debugprint(
-			self.is_server and "[SERVER]" or "[CLIENT]",
-			"Packet wasn't acknowledged, resending to ",
-			meta.ip,
-			meta.port,
-			" count ",
-			meta.count
-		)
 		if self.is_server then
 			self:sendToAddress(meta.pkt, meta.ip, meta.port)
 		else
@@ -336,19 +349,22 @@ function LunaMesh:_watchUnacknowledgedReliablePackets()
 
 		meta.count = meta.count + 1
 		if meta.count > self.reliable_pkt_count_giveup then
-			self.reliable_pkt_watcher[seq] = nil
+			self:removeReliablePktWatcher(seq)
 		end
 	end
 end
-local function handle_reliable_pkt_acknowledgment(self, ack_pkt, ip, port, client)
-	--data is the ACK seq
-	if (not ack_pkt.data) or not self.reliable_pkt_watcher[ack_pkt.data] then
+function LunaMesh:removeReliablePktWatcher(seq)
+	if seq or not self.reliable_pkt_watcher[seq] then
 		return
 	end
-
-	table.remove(self.reliable_pkt_watcher, ack_pkt.data)
+	table.remove(self.reliable_pkt_watcher, seq)
 end
-LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.RELIABLE.ACK, handle_reliable_pkt_acknowledgment)
+function LunaMesh:_internalProtocolReliablePackets()
+	local function remove_auto_reliable_pkt_watcher_from_ack(self, ack_pkt, ip, port, client)
+		self:removeReliablePktWatcher(ack_pkt.data)
+	end
+	self:setPktHandler(INTERNAL_PKT_TYPE.RELIABLE.ACK, remove_auto_reliable_pkt_watcher_from_ack)
+end
 --#endregion
 
 --#region Connection protocol
@@ -359,44 +375,47 @@ LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.RELIABLE.ACK, handle_reliable_pkt_ackno
 function LunaMesh:connect(ip, port)
 	self.socket:setsockname("*", 0) --use ephemeral port
 
-	local pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.REQUEST, nil, { reliable = true })
+	local pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.REQUEST, nil, { reliable_custom = true })
 	self.socket:setpeername(ip, port)
 	self:sendToServer(pkt)
 
 	self.state = "connecting"
 end
-local function connection_successful(self, pkt)
-	if self.state == "connecting" then
-		local data = pkt.data
-		self.state = "connected"
-		self.clientID = data.clientID
+function LunaMesh:_internalProtocolConnection()
+	local function connection_successful(self, pkt)
+		if self.state == "connecting" then
+			self:removeReliablePktWatcher(pkt.seq)
 
-		self:_callHook(HOOKS.connetionSuccessful, self.clientID)
-	end
-end
-local function connection_denied(self, pkt)
-	-- Can't yet trust a deny packet, and allow someone to disconnect us from a match
-	if self.state == "connecting" then
-		self.state = "disconnected"
-		self.socket:setpeername("*")
-	end
-end
-LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, connection_successful)
-LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.DENY, connection_denied)
+			self.state = "connected"
+			self.clientID = pkt.data.clientID
 
--- Server connection
-local function connection_requested(self, pkt, ip, port)
-	local client = self:addClient(ip, port)
-	local answer_pkt = self:createPkt(
-		INTERNAL_PKT_TYPE.CONNECT.ACCEPT,
-		{ clientID = client.clientID },
-		{ reliable = true }
-	)
-	self:sendToClient(answer_pkt, client)
+			self:_callHook(HOOKS.connetionSuccessful, self.clientID)
+		end
+	end
+	local function connection_denied(self, pkt)
+		-- Can't yet trust a deny packet, and allow someone to disconnect us from a match
+		if self.state == "connecting" then
+			self:removeReliablePktWatcher(pkt.seq)
+			self.state = "disconnected"
+			self.socket:setpeername("*")
+		end
+	end
+	self:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.ACCEPT, connection_successful)
+	self:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.DENY, connection_denied)
+
+	-- Server connection
+	local function connection_requested(self, pkt, ip, port)
+		local client = self:addClient(ip, port)
+		local answer_pkt = self:createPkt(
+			INTERNAL_PKT_TYPE.CONNECT.ACCEPT,
+			{ clientID = client.clientID },
+			{ reliable_custom_ack = pkt.seq, reliable_auto = true }
+		)
+		self:sendToClient(answer_pkt, client)
+	end
+	self:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.REQUEST, connection_requested)
 end
-LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.REQUEST, connection_requested)
 --#endregion
 
----@class LunaMesh
-LunaMesh.class = LunaMesh
-return LunaMesh.new()
+local instance = LunaMesh.fresh_instance()
+return instance

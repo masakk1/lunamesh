@@ -3,6 +3,13 @@ local bitser = require("lib.bitser")
 
 local serialise = bitser.dumps
 local deserialise = bitser.loads
+local _LUNAMESH_DEBUG = false
+
+local function debugprint(...)
+	if _LUNAMESH_DEBUG then
+		print(...)
+	end
+end
 
 --#region Types
 
@@ -60,8 +67,9 @@ end
 --#endregion
 
 ---@class LunaMesh
+---@field socket any
 local LunaMesh = {
-	socket = socket.udp(),
+	socket = nil,
 	handlers = {},
 	hooks = {},
 
@@ -78,6 +86,7 @@ LunaMesh.__index = LunaMesh
 
 function LunaMesh.new()
 	local self = setmetatable({}, LunaMesh)
+	self.socket = socket.udp()
 	self.socket:settimeout(0)
 	return self
 end
@@ -100,6 +109,7 @@ function LunaMesh:listen(dt)
 	else
 		self:_clientListen()
 	end
+
 	self:_updateInternalProtocolHandlers(dt or 0)
 end
 function LunaMesh:_serverListen()
@@ -310,6 +320,14 @@ function LunaMesh:_handleOutgoingReliablePacket(pkt, ip, port, client)
 end
 function LunaMesh:_watchUnacknowledgedReliablePackets()
 	for seq, meta in pairs(self.reliable_pkt_watcher) do
+		debugprint(
+			self.is_server and "[SERVER]" or "[CLIENT]",
+			"Packet wasn't acknowledged, resending to ",
+			meta.ip,
+			meta.port,
+			" count ",
+			meta.count
+		)
 		if self.is_server then
 			self:sendToAddress(meta.pkt, meta.ip, meta.port)
 		else
@@ -379,4 +397,6 @@ end
 LunaMesh:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.REQUEST, connection_requested)
 --#endregion
 
+---@class LunaMesh
+LunaMesh.class = LunaMesh
 return LunaMesh.new()

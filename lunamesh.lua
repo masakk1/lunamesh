@@ -1,5 +1,10 @@
 local socket = require("socket")
-local bitser = require("lib.bitser") or require("bitser")
+
+-- Require bitser in multiple locations
+local originalpackagepath = package.path
+package.path = package.path .. ";./lib/?.lua"
+local bitser = require("bitser")
+package.path = originalpackagepath
 
 local serialise = bitser.dumps
 local deserialise = bitser.loads

@@ -1,0 +1,89 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        // {
+        //     "type": "lua-local",
+        //     "request": "launch",
+        //     "name": "luajit file",
+        //     "program": {
+        //         "command": "luajit"
+        //     },
+        //     "args": [
+        //         "${file}",
+        //         "--lldebugger"
+        //     ],
+        // },
+        {
+            "type": "lua-local",
+            "request": "launch",
+            "name": "luajit current file",
+            "program": {
+                "command": "luajit"
+            },
+            "args": [
+                "${file}",
+            ],
+        },
+        {
+            "type": "lua-local",
+            "request": "launch",
+            "name": "love tmp folder",
+            "program": {
+                "command": "love"
+            },
+            "args": [
+                "tmp",
+            ],
+        },
+        {
+            "type": "lua-local",
+            "request": "launch",
+            "name": "Client Debug",
+            "program": {
+                "command": "love"
+            },
+            "args": [
+                ".",
+                "--debug",
+                "--lldebugger"
+            ],
+        },
+        {
+            "type": "lua-local",
+            "request": "launch",
+            "name": "Server Debug",
+            "program": {
+                "command": "love"
+            },
+            "args": [
+                ".",
+                "--server",
+                "--debug",
+                "--lldebugger"
+            ],
+        },
+        {
+            "type": "lua-local",
+            "request": "launch",
+            "name": "Client",
+            "program": {
+                "command": "love"
+            },
+            "args": [
+                ".",
+            ],
+        },
+        {
+            "type": "lua-local",
+            "request": "launch",
+            "name": "Server",
+            "program": {
+                "command": "love"
+            },
+            "args": [
+                ".",
+                "--server"
+            ],
+        },
+    ]
+}

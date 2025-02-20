@@ -1,0 +1,7 @@
+{
+    "Lua.workspace.library": [
+        "${3rd}/love2d/library",
+        "${addons}/busted/module/library",
+        "${3rd}/luassert/library"
+    ]
+}

@@ -33,8 +33,8 @@ end
 function helper.setupClientServer(port)
 	local server = LunaMesh.fresh_instance()
 	local client = LunaMesh.fresh_instance()
-	server:setSerialiser(bitser.dumps, bitser.loads)
-	client:setSerialiser(bitser.dumps, bitser.loads)
+	server:setSerialiser(smallfolk.dumps, smallfolk.loads)
+	client:setSerialiser(smallfolk.dumps, smallfolk.loads)
 
 	server:setServer("127.0.0.1", port)
 	client:connect("127.0.0.1", port)

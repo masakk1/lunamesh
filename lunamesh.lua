@@ -20,6 +20,11 @@ end
 ---@alias port number
 ---@alias clientID number
 
+---@class PacketConfig
+---@field reliable_query boolean? Ensures that the packet arrives to the destination. The destination needs to reply with a `reliable_query_ack`.
+---@field reliable_query_ack number? The sequence number (seq) of a `reliable_query` packet we are answering to.
+---@field reliable boolean? Ensures that the packet arrives to the destination, but doesn't expect a reply with data. Use `reliable_query` for that.
+
 ---@class Client
 ---@field ip ip
 ---@field port port
@@ -53,7 +58,7 @@ local HOOKS = {
 }
 
 ---@class LunaMesh
----@field socket any
+---@field socket UDPSocketConnected | UDPSocketUnconnected
 ---@field handlers table<PKT_TYPE, PacketHandlerCallback>
 ---@field hooks table<LunaMeshHooks, PacketHandlerCallback>
 ---@field state "disconnected" | "connecting" | "connected"
@@ -61,6 +66,7 @@ local HOOKS = {
 ---@field clients table<clientID, Client>
 ---@field client_count number
 ---@field max_clients number
+---@field seq_count number
 ---@field accumulators table<string, { t: number, threshold: number }>
 ---@field reliable_pkt_watcher table<number, { pkt: Packet, ip: ip, port: port, count: number }>
 ---@field reliable_pkt_seq number
@@ -94,6 +100,8 @@ function LunaMesh.fresh_instance(...)
 		reliable_pkt_watcher = {},
 		reliable_pkt_seq = 1,
 		reliable_pkt_count_giveup = 10,
+
+		seq_count = 1,
 	}, LunaMesh)
 
 	self.socket:settimeout(0)
@@ -226,21 +234,26 @@ end
 
 ---@param pkt_type PKT_TYPE
 ---@param data any?
----@param config table?
+---@param config PacketConfig?
 function LunaMesh:createPkt(pkt_type, data, config)
 	assert(pkt_type, "Packet type is required")
 	local pkt = {
 		type = pkt_type,
 		data = data, --fine if nil
 	}
+
 	config = config or {}
-	pkt.relc = config.reliable_custom or (config.reliable_custom_ack and true or nil)
-	pkt.rela = config.reliable_auto
-	pkt.seq = config.reliable_custom_ack
-	if pkt.relc and not pkt.seq then
-		pkt.seq = self.reliable_pkt_seq
-		self.reliable_pkt_seq = self.reliable_pkt_seq + 1
+
+	pkt.q = config.reliable_query
+	pkt.qack = config.reliable_query_ack
+	if config.reliable_query_ack and type(config.reliable_query_ack) ~= "number" then
+		error("reliable_query_ack must be a number")
 	end
+
+	pkt.rel = config.reliable
+
+	pkt.seq = self.seq_count
+	self.seq_count = self.seq_count + 1
 
 	return pkt
 end
@@ -257,6 +270,7 @@ end
 ---@param client Client
 function LunaMesh:sendToClient(pkt, client)
 	self:_matchOutgoingInternalProtocolHandler(pkt, client.ip, client.port, client)
+
 	self:sendToAddress(pkt, client.ip, client.port)
 end
 
@@ -341,46 +355,42 @@ function LunaMesh:_updateInternalProtocolHandlers(dt)
 	end
 end
 function LunaMesh:_matchIncomingInternalProtocolHandler(pkt, ip, port, client)
-	if pkt.relc or pkt.rela then --incoming reliable_custom or auto
-		self:_handleIncomingReliablePacket(pkt, ip, port, client)
-	end
+	self:_handleIncomingReliable(pkt, ip, port, client)
 end
 function LunaMesh:_matchOutgoingInternalProtocolHandler(pkt, ip, port, client)
-	if pkt.rela or pkt.relc then
-		self:_handleOutgoingReliablePacket(pkt, ip, port, client)
-	end
+	self:_handleOutgoingReliable(pkt, ip, port, client)
 end
 
 -- Reliable packets
-function LunaMesh:_handleIncomingReliablePacket(pkt, ip, port, client)
-	if not pkt.rela then
-		return
-	end
-	local ack_pkt = self:createPkt(INTERNAL_PKT_TYPE.RELIABLE.ACK, pkt.seq, { reliable_auto = true })
-
-	if (ip and port) or self.is_server then
-		self:sendToAddress(ack_pkt, ip, port)
-	else
-		self:sendToServer(ack_pkt)
+function LunaMesh:_handleIncomingReliable(pkt, ip, port, client)
+	if pkt.q then
+		-- don't do anything automatically. The programmer should handle it themselves.
+	elseif pkt.rel then
+		-- received an automatic reliable packet which expects a standalone ACK packet.
+		local ack_pkt = self:createPkt(INTERNAL_PKT_TYPE.RELIABLE.ACK, pkt.seq)
+		local send = self.is_server and self.sendToAddress or self.sendToServer
+		send(self, ack_pkt, ip, port)
+	elseif pkt.qack then
+		-- an ACK of a reliable query. This is the answer packet.
+		self:removeReliablePktWatcher(pkt.qack)
 	end
 end
-function LunaMesh:_handleOutgoingReliablePacket(pkt, ip, port, client)
-	local seq = pkt.seq or pkt.data
-	if self.reliable_pkt_watcher[seq] then
-		return
+function LunaMesh:_handleOutgoingReliable(pkt, ip, port, client)
+	if (pkt.rel or pkt.q) and not self.reliable_pkt_watcher[pkt.seq] then
+		-- when we're sending a reliable packet, watch it.
+		self.reliable_pkt_watcher[pkt.seq] = { pkt = pkt, ip = ip, port = port, count = 1 }
 	end
-	self.reliable_pkt_watcher[seq] = { pkt = pkt, ip = ip, port = port, count = 1 }
 end
 function LunaMesh:_watchUnacknowledgedReliablePackets()
-	for seq, meta in pairs(self.reliable_pkt_watcher) do
+	for seq, watcher in pairs(self.reliable_pkt_watcher) do
 		if self.is_server then
-			self:sendToAddress(meta.pkt, meta.ip, meta.port)
+			self:sendToAddress(watcher.pkt, watcher.ip, watcher.port)
 		else
-			self:sendToServer(meta.pkt)
+			self:sendToServer(watcher.pkt)
 		end
 
-		meta.count = meta.count + 1
-		if meta.count > self.reliable_pkt_count_giveup then
+		watcher.count = watcher.count + 1
+		if watcher.count > self.reliable_pkt_count_giveup then
 			self:removeReliablePktWatcher(seq)
 		end
 	end
@@ -407,7 +417,7 @@ end
 function LunaMesh:connect(ip, port)
 	self.socket:setsockname("*", 0) --use ephemeral port
 
-	local pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.REQUEST, nil, { reliable_custom = true })
+	local pkt = self:createPkt(INTERNAL_PKT_TYPE.CONNECT.REQUEST, nil, { reliable_query = true })
 	self.socket:setpeername(ip, port)
 	self:sendToServer(pkt)
 
@@ -416,8 +426,6 @@ end
 function LunaMesh:_internalProtocolConnection()
 	local function connection_successful(self, pkt)
 		if self.state == "connecting" then
-			self:removeReliablePktWatcher(pkt.seq)
-
 			self.state = "connected"
 			self.clientID = pkt.data.clientID
 
@@ -427,7 +435,6 @@ function LunaMesh:_internalProtocolConnection()
 	local function connection_denied(self, pkt)
 		-- Can't yet trust a deny packet, and allow someone to disconnect us from a match
 		if self.state == "connecting" then
-			self:removeReliablePktWatcher(pkt.seq)
 			self.state = "disconnected"
 			self.socket:setpeername("*")
 		end
@@ -441,7 +448,7 @@ function LunaMesh:_internalProtocolConnection()
 		local answer_pkt = self:createPkt(
 			INTERNAL_PKT_TYPE.CONNECT.ACCEPT,
 			{ clientID = client.clientID },
-			{ reliable_custom_ack = pkt.seq, reliable_auto = true }
+			{ reliable_query_ack = pkt.seq, reliable = true }
 		)
 		self:sendToClient(answer_pkt, client)
 	end

@@ -51,11 +51,10 @@ local INTERNAL_PKT_TYPE = {
 	},
 }
 
----@enum LunaMeshHooks
-local HOOKS = {
-	clientAdded = "clientAdded",
-	connetionSuccessful = "connetionSuccessful",
-}
+---@alias LunaMeshHooks
+---| "clientAdded" -> (client: Client). Called when a new client is authorised and added.
+---| "connetionSuccessful" -> (clientID: string). Called when a connection request is successful.
+---| "connectionRequest" -> (pkt: Packet, ip: ip, port: port). Return `false` to deny the connection. `nil` doesn't count!.
 
 ---@class LunaMesh
 ---@field socket UDPSocketConnected | UDPSocketUnconnected
@@ -69,7 +68,6 @@ local HOOKS = {
 ---@field seq_count number
 ---@field accumulators table<string, { t: number, threshold: number }>
 ---@field reliable_pkt_watcher table<number, { pkt: Packet, ip: ip, port: port, count: number }>
----@field reliable_pkt_seq number
 ---@field reliable_pkt_count_giveup number
 local LunaMesh = {}
 LunaMesh.__index = LunaMesh
@@ -91,14 +89,13 @@ function LunaMesh.fresh_instance(...)
 		--server
 		clients = {},
 		client_count = 1,
-		max_clients = 12,
+		max_clients = 999,
 
 		accumulators = {
 			unacked_rel_pkts = { t = 0, threshold = 1 },
 		},
 
 		reliable_pkt_watcher = {},
-		reliable_pkt_seq = 1,
 		reliable_pkt_count_giveup = 10,
 
 		seq_count = 1,
@@ -303,7 +300,7 @@ function LunaMesh:addClient(ip, port)
 	local client = { ip = ip, port = port, clientID = clientID }
 	self.clients[clientID] = client
 
-	self:_callHook(HOOKS.clientAdded, client)
+	self:_callHook("clientAdded", client)
 	return client
 end
 
@@ -429,7 +426,7 @@ function LunaMesh:_internalProtocolConnection()
 			self.state = "connected"
 			self.clientID = pkt.data.clientID
 
-			self:_callHook(HOOKS.connetionSuccessful, self.clientID)
+			self:_callHook("connectionSuccessful", self.clientID)
 		end
 	end
 	local function connection_denied(self, pkt)
@@ -443,14 +440,34 @@ function LunaMesh:_internalProtocolConnection()
 	self:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.DENY, connection_denied)
 
 	-- Server connection
+	---@param self LunaMesh
 	local function connection_requested(self, pkt, ip, port)
-		local client = self:addClient(ip, port)
-		local answer_pkt = self:createPkt(
-			INTERNAL_PKT_TYPE.CONNECT.ACCEPT,
-			{ clientID = client.clientID },
-			{ reliable_query_ack = pkt.seq, reliable = true }
-		)
-		self:sendToClient(answer_pkt, client)
+		if self.client_count >= self.max_clients then
+			local answer_pkt = self:createPkt(
+				INTERNAL_PKT_TYPE.CONNECT.DENY,
+				{ reason = "server_full" },
+				{ reliable_query_ack = pkt.seq }
+			)
+		else
+			local accept, reason = self:_callHook("connectionRequest", pkt, ip, port)
+			local answer_pkt
+			if accept ~= false then
+				local client = self:addClient(ip, port)
+				answer_pkt = self:createPkt(
+					INTERNAL_PKT_TYPE.CONNECT.ACCEPT,
+					{ clientID = client.clientID },
+					{ reliable_query_ack = pkt.seq, reliable = true }
+				)
+				self:_callHook("clientConnected", client)
+			else
+				answer_pkt = self:createPkt(
+					INTERNAL_PKT_TYPE.CONNECT.DENY,
+					{ reason = reason },
+					{ reliable_query_ack = pkt.seq }
+				)
+			end
+			self:sendToAddress(answer_pkt, ip, port)
+		end
 	end
 	self:setPktHandler(INTERNAL_PKT_TYPE.CONNECT.REQUEST, connection_requested)
 end

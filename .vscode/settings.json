@@ -1,7 +1,13 @@
 {
-    "Lua.workspace.library": [
-        "${3rd}/love2d/library",
-        "${addons}/busted/module/library",
-        "${3rd}/luassert/library"
-    ]
+  "Lua.workspace.library": [
+    "${3rd}/love2d/library",
+    "${addons}/busted/module/library",
+    "${3rd}/luassert/library",
+    "${addons}/lldebugger/module/library",
+    "${addons}/love2d/module/library",
+    "${addons}/luasocket/module/library"
+  ],
+  "Lua.runtime.special": {
+    "love.filesystem.load": "loadfile"
+  }
 }

@@ -1,13 +1,5 @@
 local socket = require("socket")
 
--- Require bitser in multiple locations
-local originalpackagepath = package.path
-package.path = package.path .. ";./lib/?.lua"
-local bitser = require("bitser")
-package.path = originalpackagepath
-
-local serialise = bitser.dumps
-local deserialise = bitser.loads
 local _LUNAMESH_DEBUG = true
 local _LUNAMESH_RELIABLES_DEBUG = true
 
@@ -110,6 +102,41 @@ function LunaMesh.fresh_instance(...)
 	return self
 end
 
+---Set the serialiser and deserialiser for LunaMesh to use. Tests if the functions are valid and work in a simple scenario.
+---@param serialise function
+---@param deserialise function
+function LunaMesh:setSerialiser(serialise, deserialise)
+	assert(
+		serialise and deserialise,
+		string.format("expected a serialise and deserialise function. Received %s and %s", serialise, deserialise)
+	)
+
+	--Test to make sure it works
+	local test = { text = "Hello, world!" }
+
+	local serialised_success, serialised_result_or_err = pcall(serialise, test)
+	if not serialised_success then
+		error("Serialiser errored: " .. serialised_result_or_err)
+	end
+
+	local deserialised_success, deserialised_result_or_err = pcall(deserialise, serialised_result_or_err)
+	if not deserialised_success then
+		error("Deserialiser errored: " .. deserialised_result_or_err)
+	end
+
+	assert(
+		test.text == deserialised_result_or_err.text,
+		string.format(
+			"Serialiser test failed. Serialise and deserialise don't give the same results: %s != %s",
+			test,
+			deserialised_result_or_err
+		)
+	)
+
+	self.serialise = serialise
+	self.deserialise = deserialise
+end
+
 ---@param ip ip?
 ---@param port port
 function LunaMesh:setServer(ip, port)
@@ -134,7 +161,7 @@ end
 function LunaMesh:_serverListen()
 	repeat
 		local ser_pkt, ip, port = self.socket:receivefrom()
-		local pkt = ser_pkt and deserialise(ser_pkt)
+		local pkt = ser_pkt and self.deserialise(ser_pkt)
 
 		if pkt then
 			self:_handlePacket(pkt, ip, port)
@@ -145,7 +172,7 @@ end
 function LunaMesh:_clientListen()
 	repeat
 		local ser_pkt, err = self.socket:receive()
-		local pkt = ser_pkt and deserialise(ser_pkt)
+		local pkt = ser_pkt and self.deserialise(ser_pkt)
 		if pkt then
 			self:_handlePacket(pkt)
 		end
@@ -223,7 +250,7 @@ end
 ---@param port port
 function LunaMesh:sendToAddress(pkt, ip, port)
 	self:_matchOutgoingInternalProtocolHandler(pkt, ip, port)
-	local ser_pkt = serialise(pkt)
+	local ser_pkt = self.serialise(pkt)
 	self.socket:sendto(ser_pkt, ip, port)
 end
 
@@ -236,7 +263,7 @@ end
 ---@param pkt Packet
 function LunaMesh:sendToServer(pkt)
 	self:_matchOutgoingInternalProtocolHandler(pkt)
-	local ser_pkt = serialise(pkt)
+	local ser_pkt = self.serialise(pkt)
 	self.socket:send(ser_pkt)
 end
 
@@ -244,7 +271,7 @@ end
 function LunaMesh:sendToAllClients(pkt)
 	for _, client in pairs(self.clients) do
 		self:_matchOutgoingInternalProtocolHandler(pkt, client.ip, client.port)
-		local ser_pkt = serialise(pkt)
+		local ser_pkt = self.serialise(pkt)
 		self.socket:sendto(ser_pkt, client.ip, client.port)
 	end
 end

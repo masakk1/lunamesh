@@ -2,7 +2,8 @@ local LunaMesh = require("lunamesh")
 local socket = require("socket")
 local lunamesh = require("lunamesh")
 local bitser = require("lib.bitser")
-lunamesh:setSerialiser(bitser.dumps, bitser.loads)
+local smallfolk = require("lib.smallfolk")
+lunamesh:setSerialiser(smallfolk.dumps, smallfolk.loads)
 
 local helper = {}
 helper.__index = helper

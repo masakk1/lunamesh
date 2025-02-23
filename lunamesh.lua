@@ -165,14 +165,14 @@ function LunaMesh:listen(dt)
 end
 function LunaMesh:_serverListen()
 	repeat
-		local ser_pkt, ip, port = self.socket:receivefrom()
+		local ser_pkt, ip_err, port = self.socket:receivefrom()
 		local pkt = ser_pkt and self.deserialise(ser_pkt)
 
 		if pkt then
-			self:_handlePacket(pkt, ip, port)
+			self:_handlePacket(pkt, ip_err, port)
 		end
 
-	until not ser_pkt
+	until ip_err == "timeout"
 end
 function LunaMesh:_clientListen()
 	repeat
@@ -181,8 +181,7 @@ function LunaMesh:_clientListen()
 		if pkt then
 			self:_handlePacket(pkt)
 		end
-
-	until not ser_pkt
+	until err == "timeout"
 end
 
 function LunaMesh:_handlePacket(pkt, ip, port)

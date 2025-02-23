@@ -1,5 +1,8 @@
 local LunaMesh = require("lunamesh")
 local socket = require("socket")
+local lunamesh = require("lunamesh")
+local bitser = require("lib.bitser")
+lunamesh:setSerialiser(bitser.dumps, bitser.loads)
 
 local helper = {}
 helper.__index = helper
@@ -29,6 +32,8 @@ end
 function helper.setupClientServer(port)
 	local server = LunaMesh.fresh_instance()
 	local client = LunaMesh.fresh_instance()
+	server:setSerialiser(bitser.dumps, bitser.loads)
+	client:setSerialiser(bitser.dumps, bitser.loads)
 
 	server:setServer("127.0.0.1", port)
 	client:connect("127.0.0.1", port)
